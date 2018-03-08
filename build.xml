@@ -1,0 +1,402 @@
+<project name="Textend" default="jar"
+         xmlns:if="ant:if"
+         xmlns:unless="ant:unless">
+
+    <description>
+<!--    -->A telnet client, intended for use with telnet-based talkers.
+    </description>
+
+    <property name="version" value="0.3"/>
+    <property name="version.prerelease" value="${version}-beta"/>
+
+    <!-- Set this to another JDK's jmods directory, to cross-build. -->
+    <property name="mods.javase" location="${java.home}/jmods"/>
+
+    <property name="debug" value="true"/>
+
+    <property name="app.name" value="Textend"/>
+
+    <property name="src" value="src/java"/>
+    <property name="res" value="src/java"/>
+    <property name="conf" value="src/conf"/>
+    <property name="build" value="build"/>
+    <property name="dn" value="${build}/classes"/>
+    <property name="dist" value="${build}/dist"/>
+    <property name="jar" value="${dist}/${app.name}.jar"/>
+    <property name="javadoc" value="${build}/javadoc"/>
+
+    <property name="build-properties" value="${build}/build.properties"/>
+
+    <property name="module.name" value="net.pan.textend"/>
+    <property name="main-package" value="net/pan/textend"/>
+    <property name="main-class" value="net.pan.textend.Main"/>
+
+    <property name="alias" value="jcharmap"/>
+
+    <target name="compile" description="Compile classes">
+        <available property="java9" classname="java.lang.Module"/>
+        <fail unless="java9"><!--
+            -->Java 9 or later required, <!--
+            -->but found version ${java.version}.<!--
+        --></fail>
+
+        <mkdir dir="${dn}"/>
+        <javac srcdir="${src}" destdir="${dn}" debug="${debug}"
+               includeantruntime="false">
+            <compilerarg value="-Xlint"/>
+        </javac>
+    </target>
+
+    <target name="-build-properties-needed">
+        <tstamp>
+            <format property="build.year"  locale="en" pattern="yyyy"/>
+        </tstamp>
+        <tstamp>
+            <format property="build.month" locale="en" pattern="MM"/>
+        </tstamp>
+        <tstamp>
+            <format property="build.day"   locale="en" pattern="dd"/>
+        </tstamp>
+        <condition property="build-properties-needed">
+            <isfileselected file="${build-properties}">
+                <not>
+                    <date when="after" datetime="${build.month}/${build.day}/${build.year} 00:00 AM"/>
+                </not>
+            </isfileselected>
+        </condition>
+    </target>
+
+    <target name="-build-properties"
+            depends="-build-properties-needed"
+            if="build-properties-needed">
+        <echo file="${build-properties}">
+            build.year:  ${build.year}
+            build.month: ${build.month}
+            build.day:   ${build.day}
+        </echo>
+    </target>
+
+    <target name="-exec-suffix">
+        <condition property="exec-suffix" value=".exe" else="">
+            <os family="windows"/>
+        </condition>
+    </target>
+
+    <!--
+        Sets version.svn to a number or "$unversioned".
+      -->
+    <target name="-svn-version" depends="-exec-suffix">
+        <exec executable="svnversion${exec-suffix}"
+              outputproperty="version.svn.raw"
+              errorproperty="svnversion.stderr"
+              failifexecutionfails="false">
+
+            <redirector>
+                <outputfilterchain>
+                    <striplinebreaks/>
+                    <tokenfilter>
+                        <replaceregex pattern="^(?:\d+:)?(\d+)M" replace="\1"/>
+                    </tokenfilter>
+                </outputfilterchain>
+            </redirector>
+
+        </exec>
+
+        <!--
+            Dollar sign before 'unversioned' ensures it will come before
+            any numbers when compared lexically.
+          -->
+        <condition property="version.svn" value="${version.svn.raw}"
+                                          else="$$unversioned">
+            <matches string="${version.svn.raw}" pattern="\d+"/>
+        </condition>
+
+        <condition property="svnversion.stderr.present">
+            <length string="${svnversion.stderr}" trim="true"
+                when="greater" length="0"/>
+        </condition>
+        <echo level="warning" if:set="svnversion.stderr.present"><!--
+            -->svnversion failed:
+<!--        -->${svnversion.stderr}</echo>
+    </target>
+
+    <target name="-versions" depends="-svn-version">
+        <tstamp/>
+        <property name="module.version"
+                  value="${version.prerelease}+${version.svn}.${DSTAMP}"/>
+    </target>
+
+    <!-- Sets jar.tool property. -->
+    <target name="-jar-tool" depends="-exec-suffix">
+        <property name="jar.tool"
+                  location="${java.home}/bin/jar${exec-suffix}"/>
+    </target>
+
+    <target name="jar"
+            depends="compile,-jar-tool,-versions,-build-properties"
+            description="Build jar file">
+
+        <mkdir dir="${dist}"/>
+        <jar destfile="${jar}" basedir="${dn}">
+            <exclude name="**/.*.sw?"/>
+            <manifest>
+                <attribute name="Application-Name" value="${app.name}"/>
+                <attribute name="Main-Class" value="${main-class}"/>
+                <attribute name="Permissions" value="all-permissions"/>
+                <section name="${main-package}/">
+                    <attribute name="Sealed" value="true"/>
+                    <attribute name="Specification-Title"
+                               value="${app.name}"/>
+                    <attribute name="Specification-Version"
+                               value="${version}"/>
+                    <attribute name="Implementation-Version"
+                               value="${module.version}"/>
+                    <attribute name="Implementation-Title"
+                               value="${app.name} main package"/>
+                </section>
+            </manifest>
+            <fileset dir="${src}">
+                <exclude name="**/*.java"/>
+                <exclude name="**/doc-files/**/*"/>
+                <exclude name="**/.*.sw?"/>
+            </fileset>
+            <zipfileset file="${build-properties}" prefix="${main-package}"/>
+            <zipfileset dir="images" includes="**/*.png"
+                prefix="${main-package}"/>
+        </jar>
+
+        <!-- Preserve jar's modification time -->
+        <touch file="${jar}">
+            <mapper type="merge" to="${jar}.timestamp"/>
+        </touch>
+
+        <!-- Ant cannot set main-class or version of a module yet. -->
+        <exec executable="${jar.tool}" failonerror="true">
+            <arg value="-u"/>
+            <arg value="-f"/>
+            <arg file="${jar}"/>
+            <arg value="-e"/>
+            <arg value="${main-class}"/>
+            <arg value="--module-version"/>
+            <arg value="${module.version}"/>
+        </exec>
+
+        <!--
+            Restore jar's modification time (so above jar command
+            effectively does not alter it)
+          -->
+        <touch file="${jar}.timestamp">
+            <mapper type="merge" to="${jar}"/>
+        </touch>
+    </target>
+
+    <target name="-jmod-tool" depends="-exec-suffix">
+        <property name="jmod.tool"
+                  location="${java.home}/bin/jmod${exec-suffix}"/>
+    </target>
+
+    <target name="-mod-up-to-date" depends="-exec-suffix">
+        <uptodate property="mod.uptodate"
+                  srcfile="${jar}"
+                  targetfile="${mod}"/>
+    </target>
+
+    <!--
+        Set 'executable.platform' by scanning for a 'platform' attribute
+        in java.base.jmod in the JDK.  Result should be of the form <os>-<arch>.
+      -->
+    <target name="-platform" depends="-jmod-tool">
+        <exec executable="${jmod.tool}" failonerror="true">
+            <arg value="describe"/>
+            <arg file="${mods.javase}/java.base.jmod"/>
+            <redirector outputproperty="executable.platform"
+                        errorproperty="jmod.platform.stderr">
+                <outputfilterchain>
+                    <tokenfilter>
+                        <containsregex pattern="^platform\s+(.+)" replace="\1"/>
+                    </tokenfilter>
+                </outputfilterchain>
+            </redirector>
+        </exec>
+        <property name="executable.platform" value="${os.name}-${os.arch}"/>
+    </target>
+
+    <target name="mod" depends="jar,-jmod-tool,-platform,-mod-up-to-date"
+            unless="mod.uptodate"
+            description="Create linkable .jmod file">
+
+        <property name="mod.dir"
+                  value="${dist}/${executable.platform}"/>
+        <mkdir dir="${mod.dir}"/>
+
+        <property name="mod" value="${mod.dir}/${app.name}.jmod"/>
+        <delete file="${mod}"/>
+
+        <exec executable="${jmod.tool}" failonerror="true">
+            <arg value="create"/>
+
+            <arg value="--class-path"/>
+            <arg value="${jar}"/>
+
+            <arg value="--module-version"/>
+            <arg value="${module.version}"/>
+
+            <arg value="--main-class"/>
+            <arg value="${main-class}"/>
+
+            <arg value="--legal-notices"/>
+            <arg value="docs/license"/>
+
+            <arg value="--target-platform"/>
+            <arg value="${executable.platform}"/>
+
+            <arg file="${mod}"/>
+        </exec>
+
+        <property name="mod.abs" location="${mod}"/>
+        <echo message="Created ${mod.abs}"/>
+    </target>
+
+    <target name="-jlink-tool" depends="-exec-suffix">
+        <property name="jlink.tool"
+                  location="${java.home}/bin/jlink${exec-suffix}"/>
+    </target>
+
+    <target name="-executable-dir" depends="-platform">
+        <property name="executable.dir"
+                  value="${build}/linked/${executable.platform}"/>
+    </target>
+
+    <target name="-executable-up-to-date"
+            depends="-exec-suffix,mod,-executable-dir">
+        <uptodate property="executable.uptodate"
+                  srcfile="${mod}"
+                  targetfile="${executable.dir}/bin/java${exec-suffix}"/>
+    </target>
+
+    <target name="executable" depends="mod,-executable-up-to-date,-jlink-tool"
+            unless="executable.uptodate"
+            description="Create native executable">
+
+        <delete dir="${executable.dir}"/>
+
+        <exec executable="${jlink.tool}" failonerror="true">
+            <!--
+            <arg value="-&#x2d;release-info=docs/release.txt"/>
+            -->
+
+            <arg value="-&#x2d;compress"/>
+            <arg value="2"/>
+
+            <arg value="--launcher"/>
+            <arg value="${app.name}=${module.name}/${main-class}"/>
+
+            <arg value="--output"/>
+            <arg value="${executable.dir}"/>
+
+            <arg value="--module-path"/>
+            <arg path="${mod.dir};${mods.javase}"/>
+            <arg value="--add-modules"/>
+            <arg value="${module.name}"/>
+        </exec>
+
+        <!-- As of 9.0.1, Unix executables have $@ instead of "$@" in them. -->
+        <replaceregexp byline="true"
+                       match="(\s+)(\$$@)(\s*)$$" replace='\1"\2"\3'>
+            <fileset id="executable.scripts"
+                dir="${executable.dir}/bin" includes="${app.name}*"/>
+        </replaceregexp>
+        <!-- replaceregexp changes file permissions, so restore them. -->
+        <chmod perm="a+x">
+            <fileset refid="executable.scripts"/>
+        </chmod>
+
+        <condition property="executable.suffix" value=".*" else="">
+            <contains string="${executable.platform}" substring="windows"
+                casesensitive="false"/>
+        </condition>
+        <path id="executable.abs">
+            <fileset dir="${executable.dir}/bin"
+                     includes="${app.name}${executable.suffix}"/>
+        </path>
+        <echo message="Created executable ${toString:executable.abs}"/>
+    </target>
+
+    <target name="-executable-selector">
+        <selector id="executable">
+            <and>
+                <type type="file"/>
+                <executable/>
+            </and>
+        </selector>
+    </target>
+
+    <target name="zip" depends="executable,-executable-selector,-platform"
+            description="Create distributable zip of executable">
+
+        <zip destfile="${build}/${app.name}-${executable.platform}.zip"
+             basedir="${executable.dir}">
+
+            <not>
+                <selector refid="executable"/>
+            </not>
+
+            <zipfileset dir="${executable.dir}" filemode="755">
+                <selector refid="executable"/>
+            </zipfileset>
+        </zip>
+    </target>
+
+    <target name="tar" depends="executable,-executable-selector,-platform"
+            description="Create distributable tar.gz of executable">
+
+        <tar destfile="${build}/${app.name}-${executable.platform}.tar.gz"
+             basedir="${executable.dir}" longfile="posix" compression="gzip">
+
+            <not>
+                <selector refid="executable"/>
+            </not>
+
+            <zipfileset dir="${executable.dir}" filemode="755">
+                <selector refid="executable"/>
+            </zipfileset>
+        </tar>
+    </target>
+
+    <target name="clean" description="Remove jar, compiled classes">
+        <delete dir="${build}"/>
+    </target>
+
+    <target name="javadoc" description="Generate javadoc">
+        <mkdir dir="${javadoc}"/>
+        <javadoc destdir="${javadoc}"
+                 sourcepath="${src}"
+                 packagenames="net.pan.*"
+                 access="package"
+                 version="yes"
+                 author="yes"
+                 use="yes"
+                 serialwarn="yes"
+                 doctitle="${app.name} Javadoc"
+                 windowtitle="${app.name} Javadoc">
+        </javadoc>
+    </target>
+
+    <target name="backup" description="Backup files to $HOME/.backups">
+        <property name="backup.dir" location="${user.home}/.backups"/>
+        <mkdir dir="${backup.dir}"/>
+        <tstamp>
+            <format property="backup.timestamp"
+                    pattern="yyyy-MM-dd-HHmmss"/>
+        </tstamp>
+        <property name="backup.file"
+            value="${backup.dir}/${ant.project.name}-${backup.timestamp}.zip"/>
+        <zip destfile="${backup.file}" basedir="${basedir}" excludes="**/*">
+            <zipfileset dir="${basedir}" prefix="${ant.project.name}">
+                <exclude name="${build}"/>
+                <exclude name="${build}/**"/>
+                <exclude name="**/.*.sw?"/>
+            </zipfileset>
+        </zip>
+    </target>
+</project>
