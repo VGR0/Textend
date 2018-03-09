@@ -311,12 +311,33 @@
             <fileset refid="executable.scripts"/>
         </chmod>
 
-        <condition property="executable.suffix" value=".*" else="">
+        <!--
+            Include custom execution scripts at top level, so
+            non-technical users don't have to know to look in bin.
+          -->
+        <condition property="target-is-windows">
             <contains string="${executable.platform}" substring="windows"
                 casesensitive="false"/>
         </condition>
+        <copy todir="${executable.dir}">
+            <fileset dir="bin">
+                <include name="${app.name}" unless="target-is-windows"/>
+                <include name="${app.name}.vbs" if="target-is-windows"/>
+                <include name="${app.name}.bat" if="target-is-windows"/>
+                <include name="${app.name}.cmd" if="target-is-windows"/>
+            </fileset>
+        </copy>
+        <chmod perm="a+x">
+            <fileset dir="${executable.dir}/bin">
+                <include name="${app.name}" unless="target-is-windows"/>
+            </fileset>
+        </chmod>
+
+        <condition property="executable.suffix" value=".*" else="">
+            <isset property="target-is-windows"/>
+        </condition>
         <path id="executable.abs">
-            <fileset dir="${executable.dir}/bin"
+            <fileset dir="${executable.dir}"
                      includes="${app.name}${executable.suffix}"/>
         </path>
         <echo message="Created executable ${toString:executable.abs}"/>
