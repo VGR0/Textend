@@ -328,7 +328,7 @@
             </fileset>
         </copy>
         <chmod perm="a+x">
-            <fileset dir="${executable.dir}/bin">
+            <fileset dir="${executable.dir}">
                 <include name="${app.name}" unless="target-is-windows"/>
             </fileset>
         </chmod>
@@ -352,10 +352,16 @@
         </selector>
     </target>
 
-    <target name="zip" depends="executable,-executable-selector,-platform"
+    <target name="-archive-base-name" depends="-platform">
+        <property name="archive-base-name"
+                  value="${app.name}-${executable.platform}-${version}"/>
+    </target>
+
+    <target name="zip"
+            depends="executable,-executable-selector,-archive-base-name"
             description="Create distributable zip of executable">
 
-        <zip destfile="${build}/${app.name}-${executable.platform}.zip"
+        <zip destfile="${build}/${archive-base-name}.zip"
              basedir="${executable.dir}">
 
             <not>
@@ -368,10 +374,11 @@
         </zip>
     </target>
 
-    <target name="tar" depends="executable,-executable-selector,-platform"
+    <target name="tar"
+            depends="executable,-executable-selector,-archive-base-name"
             description="Create distributable tar.gz of executable">
 
-        <tar destfile="${build}/${app.name}-${executable.platform}.tar.gz"
+        <tar destfile="${build}/${archive-base-name}.tar.gz"
              basedir="${executable.dir}" longfile="posix" compression="gzip">
 
             <not>
